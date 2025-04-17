@@ -1,0 +1,126 @@
+.chatContainer {
+  display: flex;
+  flex-direction: column-reverse;
+  height: 100%;
+  width: 100%;
+  background-color: var(--background-color);
+}
+
+.inputForm {
+  display: flex;
+  width: 100%;
+  padding: 10px;
+  padding-bottom: 40px;
+  order: 1;
+}
+
+.input {
+  flex-grow: 1;
+  padding: 16px 24px;
+  margin-right: 10px;
+  border-radius: 60px;
+  border: 2px solid var(--foreground-color);
+  font-size: 1em;
+  background-color: var(--background-color);
+  color: var(--foreground-color);
+}
+
+/* .input:focus {
+  outline: none !important;
+  border-color: #000;
+  background-color: var(--primary-color);
+  color: var(--foreground-color);
+} */
+
+.button {
+  padding: 8px 24px;
+  background-color: var(--secondary-color);
+  color: var(--foreground-color);
+  border: none;
+  font-size: 1em;
+  border-radius: 60px;
+  /* Removed duplicate border-radius property */
+}
+
+.button:disabled {
+  background-color: lightgrey;
+}
+
+.messages {
+  flex-grow: 1;
+  overflow-y: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  order: 3;
+  white-space: pre-wrap;
+}
+
+.userMessage,
+.assistantMessage,
+.codeMessage {
+  margin: 8px 0;
+  padding: 8px 16px;
+  align-self: flex-start;
+  border-radius: 20px;
+  max-width: 80%;
+  overflow-wrap: break-word;
+}
+
+.assistantMessage,
+.codeMessage {
+  border-bottom-left-radius: 0;
+}
+
+.assistantMessage img {
+  max-width: 100%;
+  margin: 8px 0px 8px 0px;
+  border-radius: 8px;
+}
+
+.userMessage {
+  align-self: flex-end;
+  color: var(--foreground-color);
+  background-color: var(--background-color);
+  border: 1px solid var(--foreground-color);
+  border-bottom-right-radius: 0;
+}
+
+.assistantMessage {
+  background-color: var(--primary-color);
+  color: var(--foreground-color);
+}
+
+.codeMessage {
+  padding: 10px 16px;
+  background-color: #e9e9e9;
+  font-family: monospace;
+  counter-reset: line;
+}
+
+.codeMessage>div {
+  margin-top: 4px;
+}
+
+.codeMessage span {
+  color: #b8b8b8;
+  margin-right: 8px;
+}
+
+.quickQuestions {
+  order: 2;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+  padding: 0 16px;
+}
+
+.quickQuestionButton {
+  padding: 7px 6px;
+  color: var(--foreground-color);
+  background-color: var(--background-color);
+  border: 1px solid var(--foreground-color);
+  font-size: 0.9em;
+  border-radius: 8px;
+  border-bottom-right-radius: 0;
+}
