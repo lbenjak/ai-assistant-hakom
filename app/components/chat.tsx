@@ -76,7 +76,7 @@ const Chat = ({
   // Function to calculate timeout duration based on word count
   const calculateTimeout = (message) => {
     const words = message.split(" ").length;
-    const delayPerWord = 800; // 1 second per word, adjust as needed
+    const delayPerWord = 200; // 200ms per word instead of 800ms
     return words * delayPerWord;
   };
 
@@ -155,132 +155,179 @@ const Chat = ({
     handleReadableStream(stream);
   };
 
+  const analyzeAccessibilityIntent = async (text: string) => {
+    try {
+      const response = await fetch('/api/accessibility-assistant/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to analyze accessibility intent');
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error analyzing accessibility intent:', error);
+      return null;
+    }
+  };
 
-  const handleSubmit = (e?: FormEvent<HTMLFormElement>) => {
+  const handleAccessibilityAction = (intent: any) => {
+    switch (intent.intentType) {
+      case 'FONT_SIZE':
+        const size = intent.action === 'INCREASE' ? '1.2rem' : 
+                    intent.action === 'DECREASE' ? '0.8rem' : '1rem';
+        document.documentElement.style.fontSize = size;
+        return `Veličina fonta je ${intent.action === 'RESET' ? 'vraćena na početnu vrijednost' : 'prilagođena'}.`;
+      
+      case 'FONT_TYPE':
+        if (intent.action === 'SET' && intent.value === 'dyslexic') {
+          document.body.classList.remove(inter.className);
+          document.body.classList.add(dyslexicFont.className);
+          return 'Font je prilagođen za lakše čitanje osobama s disleksijom.';
+        }
+        document.body.classList.remove(dyslexicFont.className);
+        document.body.classList.add(inter.className);
+        return 'Font je vraćen na standardni tip.';
+      
+      case 'THEME':
+        if (intent.action === 'SET') {
+          if (intent.value === 'dark') {
+            document.body.classList.add('dark-theme');
+            return 'Tamna tema je aktivirana.';
+          }
+          document.body.classList.remove('dark-theme');
+          return 'Svijetla tema je aktivirana.';
+        }
+        return 'Tema je vraćena na početnu vrijednost.';
+      
+      case 'GENERAL_QUERY':
+        return `$$$$`; // This will trigger the help message display
+      
+      default:
+        return null;
+    }
+  };
+
+  // Add handleQuickQuestion function
+  const handleQuickQuestion = (text: string) => {
+    // Direct mappings for quick questions
+    const quickQuestionMappings: Record<string, any> = {
+      "koje opcije pristupačnosti nudiš?": {
+        intentType: "GENERAL_QUERY",
+        confidence: 1.0
+      },
+      "tamna tema": {
+        intentType: "THEME",
+        action: "SET",
+        value: "dark",
+        confidence: 1.0
+      },
+      "svijetla tema": {
+        intentType: "THEME",
+        action: "SET",
+        value: "light",
+        confidence: 1.0
+      },
+      "povećaj font": {
+        intentType: "FONT_SIZE",
+        action: "INCREASE",
+        confidence: 1.0
+      },
+      "smanji font": {
+        intentType: "FONT_SIZE",
+        action: "DECREASE",
+        confidence: 1.0
+      },
+      "resetiraj veličinu fonta": {
+        intentType: "FONT_SIZE",
+        action: "RESET",
+        confidence: 1.0
+      },
+      "font prilagođen disleksiji": {
+        intentType: "FONT_TYPE",
+        action: "SET",
+        value: "dyslexic",
+        confidence: 1.0
+      },
+      "resetiraj tip fonta": {
+        intentType: "FONT_TYPE",
+        action: "RESET",
+        confidence: 1.0
+      }
+    };
+
+    const normalizedText = text.toLowerCase().trim();
+    return quickQuestionMappings[normalizedText];
+  };
+
+  const handleSubmit = async (e?: FormEvent<HTMLFormElement>) => {
     e?.preventDefault();
     if (!userInput.trim()) return;
-
-    const lowerCasedInput = userInput.toLowerCase();
 
     setMessages((prevMessages) => [
       ...prevMessages,
       { role: "user", text: userInput },
     ]);
 
-    if (lowerCasedInput.includes('koje opcije pristupačnosti nudiš')) {
+    // Check if it's a quick question first
+    const quickQuestionIntent = handleQuickQuestion(userInput);
+    if (quickQuestionIntent) {
+      const response = handleAccessibilityAction(quickQuestionIntent);
+      if (response) {
+        setMessages(currentMessages => [
+          ...currentMessages,
+          { role: "assistant", text: response }
+        ]);
+        setUserInput("");
+        setInputDisabled(false);
+        scrollToBottom();
+        return;
+      }
+    }
+
+    // If not a quick question, proceed with regular flow
+    const intent = await analyzeAccessibilityIntent(userInput);
+    
+    // Show accessibility options menu if:
+    // 1. Confidence is low but not zero (potential accessibility request)
+    // 2. Intent type is GENERAL_QUERY (explicitly asking about options)
+    // 3. Confidence is between 0.3 and 0.7 (model is uncertain)
+    if (intent && (
+      intent.intentType === "GENERAL_QUERY" ||
+      (intent.confidence > 0.3 && intent.confidence < 0.7) ||
+      (intent.intentType !== "NOT_ACCESSIBILITY" && intent.confidence < 0.7)
+    )) {
       setMessages(currentMessages => [
         ...currentMessages,
-        {
-          role: "assistant", text: `$$$$`
-        }
+        { role: "assistant", text: "$$$$" } // Show the help menu
       ]);
-
       setUserInput("");
       setInputDisabled(false);
       scrollToBottom();
       return;
     }
-
-    if (lowerCasedInput.includes('povećaj font')) {
-      setMessages(currentMessages => [
-        ...currentMessages,
-        { role: "assistant", text: "Veličina fonta je povećana." }
-      ]);
-
-      document.documentElement.style.fontSize = '1.2rem';
-
-      setUserInput("");
-      setInputDisabled(false);
-      scrollToBottom();
-      return;
+    
+    // Handle high-confidence accessibility intents
+    if (intent && intent.confidence >= 0.7) {
+      const response = handleAccessibilityAction(intent);
+      if (response) {
+        setMessages(currentMessages => [
+          ...currentMessages,
+          { role: "assistant", text: response }
+        ]);
+        setUserInput("");
+        setInputDisabled(false);
+        scrollToBottom();
+        return;
+      }
     }
 
-    if (lowerCasedInput.includes('smanji font')) {
-      setMessages(currentMessages => [
-        ...currentMessages,
-        { role: "assistant", text: "Veličina fonta je smanjena." }
-      ]);
-
-      document.documentElement.style.fontSize = '0.8rem';
-
-      setUserInput("");
-      setInputDisabled(false);
-      scrollToBottom();
-      return;
-    }
-
-    if (lowerCasedInput.includes('resetiraj veličinu fonta')) {
-      setMessages(currentMessages => [
-        ...currentMessages,
-        { role: "assistant", text: "Veličina fonta vraćena je na početnu vrijednost." }
-      ]);
-
-      document.documentElement.style.fontSize = '1rem';
-
-      setUserInput("");
-      setInputDisabled(false);
-      scrollToBottom();
-      return;
-    }
-
-    if (lowerCasedInput.includes('resetiraj tip fonta')) {
-      setMessages(currentMessages => [
-        ...currentMessages,
-        { role: "assistant", text: "Tip fonta vraćen je na početnu vrijednost." }
-      ]);
-
-      document.body.classList.remove(dyslexicFont.className);
-      document.body.classList.add(inter.className);
-
-      setUserInput("");
-      setInputDisabled(false);
-      scrollToBottom();
-      return;
-    }
-
-    if (lowerCasedInput.includes('disleks')) {
-      setMessages(currentMessages => [
-        ...currentMessages,
-        { role: "assistant", text: "Tip fonta je promijenjen kako bi bio prilagođen osobama sa disleksijom." }
-      ]);
-
-      document.body.classList.remove(inter.className);
-      document.body.classList.add(dyslexicFont.className);
-
-      setUserInput("");
-      setInputDisabled(false);
-      scrollToBottom();
-      return;
-    }
-
-    if (lowerCasedInput.includes('tamna tema')) {
-      setMessages(currentMessages => [
-        ...currentMessages,
-        { role: "assistant", text: "Tema je promijenjena na tamni način." }
-      ]);
-
-      document.body.classList.add('dark-theme');
-
-      setUserInput("");
-      setInputDisabled(false);
-      scrollToBottom();
-      return;
-    }
-
-    if (lowerCasedInput.includes('svijetla tema')) {
-      setMessages(currentMessages => [
-        ...currentMessages,
-        { role: "assistant", text: "Tema je promijenjena na svijetli način." }
-      ]);
-
-      document.body.classList.remove('dark-theme');
-
-      setUserInput("");
-      setInputDisabled(false);
-      scrollToBottom();
-      return;
-    }
-
+    // If no accessibility intent detected or confidence is low, proceed with regular chat
     sendMessage(userInput);
     setUserInput("");
     setInputDisabled(true);
@@ -404,10 +451,16 @@ const Chat = ({
   }
 
   const QuickQuestion = useCallback(({ input }: { input: string }) => {
-    return <button className={styles.quickQuestionButton} onClick={() => {
-      setUserInput(input.toLowerCase());
-    }}>{input}</button>
-  }, [setUserInput, handleSubmit])
+    return <button 
+      className={styles.quickQuestionButton} 
+      onClick={() => {
+        setUserInput(input);
+        handleSubmit();
+      }}
+    >
+      {input}
+    </button>
+  }, [setUserInput, handleSubmit]);
 
   return (
     <div className={styles.chatContainer}>

@@ -1,0 +1,1 @@
+export const accessibilityAssistantId = process.env.ACCESSIBILITY_ASSISTANT_ID || ""; 
