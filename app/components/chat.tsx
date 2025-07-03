@@ -10,6 +10,7 @@ import { RequiredActionFunctionToolCall } from "openai/resources/beta/threads/ru
 import { dyslexicFont, inter } from "../fonts";
 import { handleAccessibilityAction } from "./accessibility";
 import { handleQuickQuestion, analyzeAccessibilityIntent } from "./intentRecognition";
+import { calculateTimeout, scrollToBottom, appendToLastMessage, appendMessage } from "./chatUtils";
 
 type MessageProps = {
   role: "user" | "assistant" | "code";
@@ -75,19 +76,7 @@ const Chat = ({
   const [timeoutId, setTimeoutId] = useState(null);
   const [accessibilityMessageSent, setAccessibilityMessageSent] = useState(false);
 
-  const calculateTimeout = (message) => {
-    const words = message.split(" ").length;
-    const delayPerWord = 200;
-    return words * delayPerWord;
-  };
-
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
 
   useEffect(() => {
     const createThread = async () => {
@@ -113,7 +102,7 @@ const Chat = ({
           { role: "assistant", text: "Mogu li ti kako pomoći sa postavkama pristupačnosti?" }
         ]);
         setAccessibilityMessageSent(true);
-        scrollToBottom();
+        scrollToBottom(messagesEndRef);
       }
     }, timeoutDuration);
 
@@ -154,28 +143,28 @@ const Chat = ({
   };
 
   const handleTextCreated = () => {
-    appendMessage("assistant", "");
+    appendMessage(setMessages, "assistant", "");
   };
 
   const handleTextDelta = (delta) => {
     if (delta.value != null) {
-      appendToLastMessage(delta.value);
+      appendToLastMessage(setMessages, delta.value);
     };
   };
 
   const handleImageFileDone = (image) => {
-    appendToLastMessage(`\n![${image.file_id}](/api/files/${image.file_id})\n`);
+    appendToLastMessage(setMessages, `\n![${image.file_id}](/api/files/${image.file_id})\n`);
   }
 
   const toolCallCreated = (toolCall) => {
     if (toolCall.type != "code_interpreter") return;
-    appendMessage("code", "");
+    appendMessage(setMessages, "code", "");
   };
 
   const toolCallDelta = (delta, snapshot) => {
     if (delta.type != "code_interpreter") return;
     if (!delta.code_interpreter.input) return;
-    appendToLastMessage(delta.code_interpreter.input);
+    appendToLastMessage(setMessages, delta.code_interpreter.input);
   };
 
   const handleRequiresAction = async (
@@ -214,27 +203,6 @@ const Chat = ({
     });
   };
 
-  /*
-    =======================
-    === Utility Helpers ===
-    =======================
-  */
-
-  const appendToLastMessage = (text) => {
-    setMessages((prevMessages) => {
-      const lastMessage = prevMessages[prevMessages.length - 1];
-      const updatedLastMessage = {
-        ...lastMessage,
-        text: lastMessage.text + text,
-      };
-      return [...prevMessages.slice(0, -1), updatedLastMessage];
-    });
-  };
-
-  const appendMessage = (role, text) => {
-    setMessages((prevMessages) => [...prevMessages, { role, text }]);
-  };
-
   const handleSubmit = async (e?: FormEvent<HTMLFormElement>) => {
     e?.preventDefault();
     if (!userInput.trim()) return;
@@ -254,7 +222,7 @@ const Chat = ({
         ]);
         setUserInput("");
         setInputDisabled(false);
-        scrollToBottom();
+        scrollToBottom(messagesEndRef);
         return;
       }
     }
@@ -272,7 +240,7 @@ const Chat = ({
       ]);
       setUserInput("");
       setInputDisabled(false);
-      scrollToBottom();
+      scrollToBottom(messagesEndRef);
       return;
     }
 
@@ -285,7 +253,7 @@ const Chat = ({
         ]);
         setUserInput("");
         setInputDisabled(false);
-        scrollToBottom();
+        scrollToBottom(messagesEndRef);
         return;
       }
     }
@@ -293,7 +261,7 @@ const Chat = ({
     sendMessage(userInput);
     setUserInput("");
     setInputDisabled(true);
-    scrollToBottom();
+    scrollToBottom(messagesEndRef);
   };
 
   const QuickQuestion = useCallback(({ input }: { input: string }) => {
