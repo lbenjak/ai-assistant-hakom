@@ -27,79 +27,147 @@ export async function POST(request: Request) {
       tools: [{
         type: "function",
         function: {
-          name: "analyze_accessibility_intent"
+          name: "analyze_accessibility_intent",
+          parameters: {
+            type: "object",
+            properties: {
+              intentType: {
+                type: "string",
+                enum: ["FONT_SIZE", "FONT_TYPE", "THEME", "GENERAL_QUERY", "NOT_ACCESSIBILITY"],
+                description: "The type of accessibility request detected"
+              },
+              action: {
+                type: "string",
+                enum: ["INCREASE", "DECREASE", "RESET", "SET"],
+                description: "The action to perform"
+              },
+              value: {
+                type: "string",
+                description: "Additional value for the action (e.g., 'dark' for theme, 'dyslexic' for font type)"
+              },
+              confidence: {
+                type: "number",
+                minimum: 0,
+                maximum: 1,
+                description: "Confidence score of the intent detection"
+              }
+            },
+            required: ["intentType", "confidence"]
+          }
         }
       }]
     });
-    console.log('Analysis run started:', run.id);
+    console.log('Analysis run started:', { runId: run.id, threadId: thread.id });
     
     // Wait for the analysis to complete
     let analysisResult;
     let attempts = 0;
-    const maxAttempts = 60; // Increased max attempts but with shorter interval
+    const maxAttempts = 60;
     
     while (attempts < maxAttempts) {
       attempts++;
       const runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
-      console.log('Run status:', runStatus.status);
+      console.log('Run status check #' + attempts + ':', { 
+        status: runStatus.status,
+        threadId: thread.id,
+        runId: run.id
+      });
+      
+      if (runStatus.status === 'requires_action') {
+        console.log('Run requires action:', {
+          threadId: thread.id,
+          runId: run.id,
+          action: JSON.stringify(runStatus.required_action, null, 2)
+        });
+        
+        // Check if there are multiple tool calls
+        const toolCalls = runStatus.required_action.submit_tool_outputs.tool_calls;
+        if (toolCalls.length > 1) {
+          console.log('Multiple intents detected, returning GENERAL_QUERY');
+          analysisResult = {
+            intentType: "GENERAL_QUERY",
+            confidence: 0.6
+          };
+          
+          // Submit success response for all tool calls
+          await openai.beta.threads.runs.submitToolOutputs(thread.id, run.id, {
+            tool_outputs: toolCalls.map(call => ({
+              tool_call_id: call.id,
+              output: JSON.stringify({ success: true })
+            }))
+          });
+          
+          break;
+        }
+        
+        // Handle single tool call
+        const toolCall = toolCalls[0];
+        if (toolCall.type === 'function' && toolCall.function.name === 'analyze_accessibility_intent') {
+          try {
+            const args = toolCall.function.arguments;
+            console.log('Raw function arguments:', args);
+            
+            let parsedArgs;
+            try {
+              parsedArgs = JSON.parse(args);
+              console.log('Parsed arguments:', parsedArgs);
+            } catch (parseError) {
+              console.error('Error parsing arguments:', parseError);
+              parsedArgs = {};
+            }
+            
+            analysisResult = Object.keys(parsedArgs).length > 0 ? 
+              parsedArgs : 
+              { intentType: "NOT_ACCESSIBILITY", confidence: 1.0 };
+            
+            console.log('Determined analysis result:', analysisResult);
+            
+            await openai.beta.threads.runs.submitToolOutputs(thread.id, run.id, {
+              tool_outputs: [{
+                tool_call_id: toolCall.id,
+                output: JSON.stringify({ success: true })
+              }]
+            });
+            
+            console.log('Successfully submitted tool outputs');
+          } catch (error) {
+            console.error('Error processing function arguments:', {
+              error: error.message,
+              args: toolCall.function.arguments
+            });
+            analysisResult = { intentType: "NOT_ACCESSIBILITY", confidence: 1.0 };
+          }
+        }
+      }
       
       if (runStatus.status === 'completed') {
-        const messages = await openai.beta.threads.messages.list(thread.id);
-        const lastMessage = messages.data[0];
-        console.log('Response message:', JSON.stringify(lastMessage, null, 2));
-        
-        if (lastMessage.role === 'assistant') {
-          if (lastMessage.content[0].type === 'function_call') {
-            analysisResult = JSON.parse(lastMessage.content[0].function_call.arguments);
-          } else if (lastMessage.content[0].type === 'text') {
-            analysisResult = {
-              intentType: "NOT_ACCESSIBILITY",
-              confidence: 1.0
-            };
-          }
-          console.log('Analysis result:', analysisResult);
+        if (!analysisResult) {
+          const messages = await openai.beta.threads.messages.list(thread.id);
+          const lastMessage = messages.data[0];
+          console.log('Complete response message:', {
+            role: lastMessage.role,
+            contentType: lastMessage.content[0]?.type,
+            content: JSON.stringify(lastMessage.content, null, 2)
+          });
         }
         break;
       }
       
-      if (runStatus.status === 'requires_action') {
-        console.log('Run requires action:', JSON.stringify(runStatus.required_action, null, 2));
-        
-        // Get the assistant's function call arguments
-        const toolCall = runStatus.required_action.submit_tool_outputs.tool_calls[0];
-        if (toolCall.type === 'function' && toolCall.function.name === 'analyze_accessibility_intent') {
-          try {
-            // Handle empty arguments case
-            const args = toolCall.function.arguments;
-            analysisResult = args && args !== '{}' ? 
-              JSON.parse(args) : 
-              { intentType: "NOT_ACCESSIBILITY", confidence: 1.0 };
-          
-            // Submit the result back
-            await openai.beta.threads.runs.submitToolOutputs(thread.id, run.id, {
-              tool_outputs: [{
-                tool_call_id: toolCall.id,
-                output: JSON.stringify(analysisResult)
-              }]
-            });
-          
-            console.log('Submitted tool outputs with analysis result:', analysisResult);
-            break;
-          } catch (error) {
-            console.error('Error parsing function arguments:', error);
-            analysisResult = { intentType: "NOT_ACCESSIBILITY", confidence: 1.0 };
-            break;
-          }
-        }
-      }
-      
       if (runStatus.status === 'failed') {
-        console.error('Run failed:', runStatus);
+        console.error('Run failed:', {
+          threadId: thread.id,
+          runId: run.id,
+          status: runStatus
+        });
         throw new Error('Analysis failed');
       }
       
       if (runStatus.status === 'expired') {
-        console.error('Run expired:', runStatus);
+        console.error('Run expired:', {
+          threadId: thread.id,
+          runId: run.id,
+          status: runStatus
+        });
         throw new Error('Analysis expired');
       }
       
@@ -108,18 +176,23 @@ export async function POST(request: Request) {
     
     // Clean up the thread
     await openai.beta.threads.del(thread.id);
-    console.log('Thread cleaned up');
+    console.log('Thread cleaned up:', thread.id);
     
     if (!analysisResult) {
+      console.log('No analysis result obtained, returning default');
       return Response.json({ 
         intentType: "NOT_ACCESSIBILITY", 
         confidence: 1.0 
       });
     }
     
+    console.log('Returning final result:', analysisResult);
     return Response.json(analysisResult);
   } catch (error) {
-    console.error('Error in accessibility analysis:', error);
+    console.error('Error in accessibility analysis:', {
+      error: error.message,
+      stack: error.stack
+    });
     return Response.json({ 
       intentType: "NOT_ACCESSIBILITY", 
       confidence: 1.0,

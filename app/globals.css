@@ -9,6 +9,7 @@
   --primary-color: #efefef;
   --secondary-color: #a8c2c1;
   --accent-color: #ff0266;
+  --link-color: #1a73e8;
 }
 
 body.dark-theme {
@@ -36,7 +37,7 @@ body {
 }
 
 a {
-  color: var(--primary-color);
+  color: var(--link-color);
   text-decoration: none;
 }
 

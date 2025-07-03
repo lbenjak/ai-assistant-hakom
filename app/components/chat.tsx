@@ -347,7 +347,8 @@ const Chat = ({
       appendToLastMessage(delta.value);
     };
     if (delta.annotations != null) {
-      annotateLastMessage(delta.annotations);
+      // annotateLastMessage(delta.annotations)
+      // addInlineCitationsToLastMessage(delta.annotations);
     }
   };
 
@@ -432,23 +433,32 @@ const Chat = ({
     setMessages((prevMessages) => [...prevMessages, { role, text }]);
   };
 
-  const annotateLastMessage = (annotations) => {
+
+  const addInlineCitationsToLastMessage = (annotations) => {
     setMessages((prevMessages) => {
       const lastMessage = prevMessages[prevMessages.length - 1];
       const updatedLastMessage = {
         ...lastMessage,
+        text: lastMessage.text,
       };
-      annotations.forEach((annotation) => {
-        if (annotation.type === 'file_path') {
-          updatedLastMessage.text = updatedLastMessage.text.replaceAll(
-            annotation.text,
-            `/api/files/${annotation.file_path.file_id}`
-          );
-        }
-      })
+
+      // updatedLastMessage.text = updatedLastMessage.text.replace(/【\d+:\d+†source】/g, '');
+  
+      annotations.forEach((annotation, index) => {
+        if (!annotation.file_citation) return;
+  
+        const fileId = annotation.file_citation.file_id;
+        const citationMarkdown = `[[${index + 1}]](/api/files/${fileId})`;
+  
+        updatedLastMessage.text = updatedLastMessage.text.replaceAll(
+          annotation.text,
+          `${annotation.text} ${citationMarkdown}`
+        );
+      });
+  
       return [...prevMessages.slice(0, -1), updatedLastMessage];
     });
-  }
+  };
 
   const QuickQuestion = useCallback(({ input }: { input: string }) => {
     return <button 
