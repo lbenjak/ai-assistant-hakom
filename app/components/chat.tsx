@@ -74,6 +74,8 @@ const TypingIndicator = () => (
   </div>
 );
 
+const ENABLE_LOGGING = typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_ENABLE_LOGGING === 'true';
+
 const Chat = ({
   functionCallHandler = () => Promise.resolve(""),
 }: ChatProps) => {

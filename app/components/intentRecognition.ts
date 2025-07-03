@@ -1,3 +1,5 @@
+import { LOGGING_ENABLED } from "../utils/logging";
+
 export type AccessibilityIntent = {
   intentType: string;
   action?: string;
@@ -69,7 +71,7 @@ export async function analyzeAccessibilityIntent(text: string): Promise<Accessib
     }
     return await response.json();
   } catch (error) {
-    console.error('Error analyzing accessibility intent:', error);
+    if (LOGGING_ENABLED) { console.error('Error analyzing accessibility intent:', error); }
     return null;
   }
 } 

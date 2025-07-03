@@ -1,25 +1,26 @@
 import { openai } from "@/app/openai";
 import { accessibilityAssistantId } from "@/app/accessibility-config";
+import { LOGGING_ENABLED } from "@/app/utils/logging";
 
 export async function POST(request: Request) {
   try {
     const { text } = await request.json();
     
     if (!accessibilityAssistantId) {
-      console.error('Accessibility Assistant ID is not configured');
+      if (LOGGING_ENABLED) { console.error('Accessibility Assistant ID is not configured'); }
       return Response.json({ error: 'Accessibility Assistant ID is not configured' }, { status: 500 });
     }
 
     // Create a thread for this analysis
     const thread = await openai.beta.threads.create();
-    console.log('Thread created:', thread.id);
+    if (LOGGING_ENABLED) { console.log('Thread created:', thread.id); }
     
     // Add the user's message to the thread
     await openai.beta.threads.messages.create(thread.id, {
       role: "user",
       content: text
     });
-    console.log('Message added to thread');
+    if (LOGGING_ENABLED) { console.log('Message added to thread'); }
     
     // Run the analysis
     const run = await openai.beta.threads.runs.create(thread.id, {
@@ -57,7 +58,7 @@ export async function POST(request: Request) {
         }
       }]
     });
-    console.log('Analysis run started:', { runId: run.id, threadId: thread.id });
+    if (LOGGING_ENABLED) { console.log('Analysis run started:', { runId: run.id, threadId: thread.id }); }
     
     // Wait for the analysis to complete
     let analysisResult;
@@ -67,23 +68,23 @@ export async function POST(request: Request) {
     while (attempts < maxAttempts) {
       attempts++;
       const runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
-      console.log('Run status check #' + attempts + ':', { 
+      if (LOGGING_ENABLED) { console.log('Run status check #' + attempts + ':', { 
         status: runStatus.status,
         threadId: thread.id,
         runId: run.id
-      });
+      }); }
       
       if (runStatus.status === 'requires_action') {
-        console.log('Run requires action:', {
+        if (LOGGING_ENABLED) { console.log('Run requires action:', {
           threadId: thread.id,
           runId: run.id,
           action: JSON.stringify(runStatus.required_action, null, 2)
-        });
+        }); }
         
         // Check if there are multiple tool calls
         const toolCalls = runStatus.required_action.submit_tool_outputs.tool_calls;
         if (toolCalls.length > 1) {
-          console.log('Multiple intents detected, returning GENERAL_QUERY');
+          if (LOGGING_ENABLED) { console.log('Multiple intents detected, returning GENERAL_QUERY'); }
           analysisResult = {
             intentType: "GENERAL_QUERY",
             confidence: 0.6
@@ -105,14 +106,14 @@ export async function POST(request: Request) {
         if (toolCall.type === 'function' && toolCall.function.name === 'analyze_accessibility_intent') {
           try {
             const args = toolCall.function.arguments;
-            console.log('Raw function arguments:', args);
+            if (LOGGING_ENABLED) { console.log('Raw function arguments:', args); }
             
             let parsedArgs;
             try {
               parsedArgs = JSON.parse(args);
-              console.log('Parsed arguments:', parsedArgs);
+              if (LOGGING_ENABLED) { console.log('Parsed arguments:', parsedArgs); }
             } catch (parseError) {
-              console.error('Error parsing arguments:', parseError);
+              if (LOGGING_ENABLED) { console.error('Error parsing arguments:', parseError); }
               parsedArgs = {};
             }
             
@@ -120,7 +121,7 @@ export async function POST(request: Request) {
               parsedArgs : 
               { intentType: "NOT_ACCESSIBILITY", confidence: 1.0 };
             
-            console.log('Determined analysis result:', analysisResult);
+            if (LOGGING_ENABLED) { console.log('Determined analysis result:', analysisResult); }
             
             await openai.beta.threads.runs.submitToolOutputs(thread.id, run.id, {
               tool_outputs: [{
@@ -129,12 +130,12 @@ export async function POST(request: Request) {
               }]
             });
             
-            console.log('Successfully submitted tool outputs');
+            if (LOGGING_ENABLED) { console.log('Successfully submitted tool outputs'); }
           } catch (error) {
-            console.error('Error processing function arguments:', {
+            if (LOGGING_ENABLED) { console.error('Error processing function arguments:', {
               error: error.message,
               args: toolCall.function.arguments
-            });
+            }); }
             analysisResult = { intentType: "NOT_ACCESSIBILITY", confidence: 1.0 };
           }
         }
@@ -144,30 +145,30 @@ export async function POST(request: Request) {
         if (!analysisResult) {
           const messages = await openai.beta.threads.messages.list(thread.id);
           const lastMessage = messages.data[0];
-          console.log('Complete response message:', {
+          if (LOGGING_ENABLED) { console.log('Complete response message:', {
             role: lastMessage.role,
             contentType: lastMessage.content[0]?.type,
             content: JSON.stringify(lastMessage.content, null, 2)
-          });
+          }); }
         }
         break;
       }
       
       if (runStatus.status === 'failed') {
-        console.error('Run failed:', {
+        if (LOGGING_ENABLED) { console.error('Run failed:', {
           threadId: thread.id,
           runId: run.id,
           status: runStatus
-        });
+        }); }
         throw new Error('Analysis failed');
       }
       
       if (runStatus.status === 'expired') {
-        console.error('Run expired:', {
+        if (LOGGING_ENABLED) { console.error('Run expired:', {
           threadId: thread.id,
           runId: run.id,
           status: runStatus
-        });
+        }); }
         throw new Error('Analysis expired');
       }
       
@@ -176,23 +177,23 @@ export async function POST(request: Request) {
     
     // Clean up the thread
     await openai.beta.threads.del(thread.id);
-    console.log('Thread cleaned up:', thread.id);
+    if (LOGGING_ENABLED) { console.log('Thread cleaned up:', thread.id); }
     
     if (!analysisResult) {
-      console.log('No analysis result obtained, returning default');
+      if (LOGGING_ENABLED) { console.log('No analysis result obtained, returning default'); }
       return Response.json({ 
         intentType: "NOT_ACCESSIBILITY", 
         confidence: 1.0 
       });
     }
     
-    console.log('Returning final result:', analysisResult);
+    if (LOGGING_ENABLED) { console.log('Returning final result:', analysisResult); }
     return Response.json(analysisResult);
   } catch (error) {
-    console.error('Error in accessibility analysis:', {
+    if (LOGGING_ENABLED) { console.error('Error in accessibility analysis:', {
       error: error.message,
       stack: error.stack
-    });
+    }); }
     return Response.json({ 
       intentType: "NOT_ACCESSIBILITY", 
       confidence: 1.0,
