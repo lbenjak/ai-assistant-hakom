@@ -8,6 +8,8 @@ import styles from "./chat.module.css";
 import { AssistantStreamEvent } from "openai/resources/beta/assistants/assistants";
 import { RequiredActionFunctionToolCall } from "openai/resources/beta/threads/runs/runs";
 import { dyslexicFont, inter } from "../fonts";
+import { handleAccessibilityAction } from "./accessibility";
+import { handleQuickQuestion, analyzeAccessibilityIntent } from "./intentRecognition";
 
 type MessageProps = {
   role: "user" | "assistant" | "code";
@@ -73,14 +75,12 @@ const Chat = ({
   const [timeoutId, setTimeoutId] = useState(null);
   const [accessibilityMessageSent, setAccessibilityMessageSent] = useState(false);
 
-  // Function to calculate timeout duration based on word count
   const calculateTimeout = (message) => {
     const words = message.split(" ").length;
-    const delayPerWord = 200; // 200ms per word instead of 800ms
+    const delayPerWord = 200;
     return words * delayPerWord;
   };
 
-  // automatically scroll to bottom of chat
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -89,7 +89,6 @@ const Chat = ({
     scrollToBottom();
   }, [messages]);
 
-  // create a new threadID when chat component created
   useEffect(() => {
     const createThread = async () => {
       const res = await fetch(`/api/assistants/threads`, {
@@ -101,7 +100,6 @@ const Chat = ({
     createThread();
   }, []);
 
-  // handle user inactivity
   useEffect(() => {
     if (timeoutId) clearTimeout(timeoutId);
 
@@ -155,222 +153,31 @@ const Chat = ({
     handleReadableStream(stream);
   };
 
-  const analyzeAccessibilityIntent = async (text: string) => {
-    try {
-      const response = await fetch('/api/accessibility-assistant/analyze', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ text })
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to analyze accessibility intent');
-      }
-      
-      return await response.json();
-    } catch (error) {
-      console.error('Error analyzing accessibility intent:', error);
-      return null;
-    }
-  };
-
-  const handleAccessibilityAction = (intent: any) => {
-    switch (intent.intentType) {
-      case 'FONT_SIZE':
-        const size = intent.action === 'INCREASE' ? '1.2rem' : 
-                    intent.action === 'DECREASE' ? '0.8rem' : '1rem';
-        document.documentElement.style.fontSize = size;
-        return `Veličina fonta je ${intent.action === 'RESET' ? 'vraćena na početnu vrijednost' : 'prilagođena'}.`;
-      
-      case 'FONT_TYPE':
-        if (intent.action === 'SET' && intent.value === 'dyslexic') {
-          document.body.classList.remove(inter.className);
-          document.body.classList.add(dyslexicFont.className);
-          return 'Font je prilagođen za lakše čitanje osobama s disleksijom.';
-        }
-        document.body.classList.remove(dyslexicFont.className);
-        document.body.classList.add(inter.className);
-        return 'Font je vraćen na standardni tip.';
-      
-      case 'THEME':
-        if (intent.action === 'SET') {
-          if (intent.value === 'dark') {
-            document.body.classList.add('dark-theme');
-            return 'Tamna tema je aktivirana.';
-          }
-          document.body.classList.remove('dark-theme');
-          return 'Svijetla tema je aktivirana.';
-        }
-        return 'Tema je vraćena na početnu vrijednost.';
-      
-      case 'GENERAL_QUERY':
-        return `$$$$`; // This will trigger the help message display
-      
-      default:
-        return null;
-    }
-  };
-
-  // Add handleQuickQuestion function
-  const handleQuickQuestion = (text: string) => {
-    // Direct mappings for quick questions
-    const quickQuestionMappings: Record<string, any> = {
-      "koje opcije pristupačnosti nudiš?": {
-        intentType: "GENERAL_QUERY",
-        confidence: 1.0
-      },
-      "tamna tema": {
-        intentType: "THEME",
-        action: "SET",
-        value: "dark",
-        confidence: 1.0
-      },
-      "svijetla tema": {
-        intentType: "THEME",
-        action: "SET",
-        value: "light",
-        confidence: 1.0
-      },
-      "povećaj font": {
-        intentType: "FONT_SIZE",
-        action: "INCREASE",
-        confidence: 1.0
-      },
-      "smanji font": {
-        intentType: "FONT_SIZE",
-        action: "DECREASE",
-        confidence: 1.0
-      },
-      "resetiraj veličinu fonta": {
-        intentType: "FONT_SIZE",
-        action: "RESET",
-        confidence: 1.0
-      },
-      "font prilagođen disleksiji": {
-        intentType: "FONT_TYPE",
-        action: "SET",
-        value: "dyslexic",
-        confidence: 1.0
-      },
-      "resetiraj tip fonta": {
-        intentType: "FONT_TYPE",
-        action: "RESET",
-        confidence: 1.0
-      }
-    };
-
-    const normalizedText = text.toLowerCase().trim();
-    return quickQuestionMappings[normalizedText];
-  };
-
-  const handleSubmit = async (e?: FormEvent<HTMLFormElement>) => {
-    e?.preventDefault();
-    if (!userInput.trim()) return;
-
-    setMessages((prevMessages) => [
-      ...prevMessages,
-      { role: "user", text: userInput },
-    ]);
-
-    // Check if it's a quick question first
-    const quickQuestionIntent = handleQuickQuestion(userInput);
-    if (quickQuestionIntent) {
-      const response = handleAccessibilityAction(quickQuestionIntent);
-      if (response) {
-        setMessages(currentMessages => [
-          ...currentMessages,
-          { role: "assistant", text: response }
-        ]);
-        setUserInput("");
-        setInputDisabled(false);
-        scrollToBottom();
-        return;
-      }
-    }
-
-    // If not a quick question, proceed with regular flow
-    const intent = await analyzeAccessibilityIntent(userInput);
-    
-    // Show accessibility options menu if:
-    // 1. Confidence is low but not zero (potential accessibility request)
-    // 2. Intent type is GENERAL_QUERY (explicitly asking about options)
-    // 3. Confidence is between 0.3 and 0.7 (model is uncertain)
-    if (intent && (
-      intent.intentType === "GENERAL_QUERY" ||
-      (intent.confidence > 0.3 && intent.confidence < 0.7) ||
-      (intent.intentType !== "NOT_ACCESSIBILITY" && intent.confidence < 0.7)
-    )) {
-      setMessages(currentMessages => [
-        ...currentMessages,
-        { role: "assistant", text: "$$$$" } // Show the help menu
-      ]);
-      setUserInput("");
-      setInputDisabled(false);
-      scrollToBottom();
-      return;
-    }
-    
-    // Handle high-confidence accessibility intents
-    if (intent && intent.confidence >= 0.7) {
-      const response = handleAccessibilityAction(intent);
-      if (response) {
-        setMessages(currentMessages => [
-          ...currentMessages,
-          { role: "assistant", text: response }
-        ]);
-        setUserInput("");
-        setInputDisabled(false);
-        scrollToBottom();
-        return;
-      }
-    }
-
-    // If no accessibility intent detected or confidence is low, proceed with regular chat
-    sendMessage(userInput);
-    setUserInput("");
-    setInputDisabled(true);
-    scrollToBottom();
-  };
-
-  /* Stream Event Handlers */
-
-  // textCreated - create new assistant message
   const handleTextCreated = () => {
     appendMessage("assistant", "");
   };
 
-  // textDelta - append text to last assistant message
   const handleTextDelta = (delta) => {
     if (delta.value != null) {
       appendToLastMessage(delta.value);
     };
-    if (delta.annotations != null) {
-      // annotateLastMessage(delta.annotations)
-      // addInlineCitationsToLastMessage(delta.annotations);
-    }
   };
 
-  // imageFileDone - show image in chat
   const handleImageFileDone = (image) => {
     appendToLastMessage(`\n![${image.file_id}](/api/files/${image.file_id})\n`);
   }
 
-  // toolCallCreated - log new tool call
   const toolCallCreated = (toolCall) => {
     if (toolCall.type != "code_interpreter") return;
     appendMessage("code", "");
   };
 
-  // toolCallDelta - log delta and snapshot for the tool call
   const toolCallDelta = (delta, snapshot) => {
     if (delta.type != "code_interpreter") return;
     if (!delta.code_interpreter.input) return;
     appendToLastMessage(delta.code_interpreter.input);
   };
 
-  // handleRequiresAction - handle function call
   const handleRequiresAction = async (
     event: AssistantStreamEvent.ThreadRunRequiresAction
   ) => {
@@ -387,24 +194,19 @@ const Chat = ({
     submitActionResult(runId, toolCallOutputs);
   };
 
-  // handleRunCompleted - re-enable the input form
   const handleRunCompleted = () => {
     setInputDisabled(false);
   };
 
   const handleReadableStream = (stream: AssistantStream) => {
-    // messages
     stream.on("textCreated", handleTextCreated);
     stream.on("textDelta", handleTextDelta);
 
-    // image
     stream.on("imageFileDone", handleImageFileDone);
 
-    // code interpreter
     stream.on("toolCallCreated", toolCallCreated);
     stream.on("toolCallDelta", toolCallDelta);
 
-    // events without helpers yet (e.g. requires_action and run.done)
     stream.on("event", (event) => {
       if (event.event === "thread.run.requires_action")
         handleRequiresAction(event);
@@ -433,31 +235,65 @@ const Chat = ({
     setMessages((prevMessages) => [...prevMessages, { role, text }]);
   };
 
+  const handleSubmit = async (e?: FormEvent<HTMLFormElement>) => {
+    e?.preventDefault();
+    if (!userInput.trim()) return;
 
-  const addInlineCitationsToLastMessage = (annotations) => {
-    setMessages((prevMessages) => {
-      const lastMessage = prevMessages[prevMessages.length - 1];
-      const updatedLastMessage = {
-        ...lastMessage,
-        text: lastMessage.text,
-      };
+    setMessages((prevMessages) => [
+      ...prevMessages,
+      { role: "user", text: userInput },
+    ]);
 
-      // updatedLastMessage.text = updatedLastMessage.text.replace(/【\d+:\d+†source】/g, '');
-  
-      annotations.forEach((annotation, index) => {
-        if (!annotation.file_citation) return;
-  
-        const fileId = annotation.file_citation.file_id;
-        const citationMarkdown = `[[${index + 1}]](/api/files/${fileId})`;
-  
-        updatedLastMessage.text = updatedLastMessage.text.replaceAll(
-          annotation.text,
-          `${annotation.text} ${citationMarkdown}`
-        );
-      });
-  
-      return [...prevMessages.slice(0, -1), updatedLastMessage];
-    });
+    const quickQuestionIntent = handleQuickQuestion(userInput);
+    if (quickQuestionIntent) {
+      const response = handleAccessibilityAction(quickQuestionIntent);
+      if (response) {
+        setMessages(currentMessages => [
+          ...currentMessages,
+          { role: "assistant", text: response }
+        ]);
+        setUserInput("");
+        setInputDisabled(false);
+        scrollToBottom();
+        return;
+      }
+    }
+
+    const intent = await analyzeAccessibilityIntent(userInput);
+
+    if (intent && (
+      intent.intentType === "GENERAL_QUERY" ||
+      (intent.confidence > 0.3 && intent.confidence < 0.7) ||
+      (intent.intentType !== "NOT_ACCESSIBILITY" && intent.confidence < 0.7)
+    )) {
+      setMessages(currentMessages => [
+        ...currentMessages,
+        { role: "assistant", text: "$$$$" } // Show the help menu
+      ]);
+      setUserInput("");
+      setInputDisabled(false);
+      scrollToBottom();
+      return;
+    }
+
+    if (intent && intent.confidence >= 0.7) {
+      const response = handleAccessibilityAction(intent);
+      if (response) {
+        setMessages(currentMessages => [
+          ...currentMessages,
+          { role: "assistant", text: response }
+        ]);
+        setUserInput("");
+        setInputDisabled(false);
+        scrollToBottom();
+        return;
+      }
+    }
+
+    sendMessage(userInput);
+    setUserInput("");
+    setInputDisabled(true);
+    scrollToBottom();
   };
 
   const QuickQuestion = useCallback(({ input }: { input: string }) => {
