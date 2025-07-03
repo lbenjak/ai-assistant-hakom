@@ -73,8 +73,6 @@ const Chat = ({
   const [messages, setMessages] = useState([]);
   const [inputDisabled, setInputDisabled] = useState(false);
   const [threadId, setThreadId] = useState("");
-  const [timeoutId, setTimeoutId] = useState(null);
-  const [accessibilityMessageSent, setAccessibilityMessageSent] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -88,27 +86,6 @@ const Chat = ({
     };
     createThread();
   }, []);
-
-  useEffect(() => {
-    if (timeoutId) clearTimeout(timeoutId);
-
-    const lastAssistantMessage = messages.filter(msg => msg.role === "assistant").pop();
-    const timeoutDuration = lastAssistantMessage ? calculateTimeout(lastAssistantMessage.text) : 10000;
-
-    const id = setTimeout(() => {
-      if (!accessibilityMessageSent) {
-        setMessages((prevMessages) => [
-          ...prevMessages,
-          { role: "assistant", text: "Mogu li ti kako pomoći sa postavkama pristupačnosti?" }
-        ]);
-        setAccessibilityMessageSent(true);
-        scrollToBottom(messagesEndRef);
-      }
-    }, timeoutDuration);
-
-    setTimeoutId(id);
-    return () => clearTimeout(id);
-  }, [userInput, messages]);
 
   const sendMessage = async (text) => {
     const response = await fetch(
