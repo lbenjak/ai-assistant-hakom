@@ -66,13 +66,22 @@ type ChatProps = {
   ) => Promise<string>;
 };
 
+const TypingIndicator = () => (
+  <div className={styles.typingIndicator}>
+    <span className={styles.typingDot}></span>
+    <span className={styles.typingDot}></span>
+    <span className={styles.typingDot}></span>
+  </div>
+);
+
 const Chat = ({
-  functionCallHandler = () => Promise.resolve(""), // default to return empty string
+  functionCallHandler = () => Promise.resolve(""),
 }: ChatProps) => {
   const [userInput, setUserInput] = useState("");
   const [messages, setMessages] = useState([]);
   const [inputDisabled, setInputDisabled] = useState(false);
   const [threadId, setThreadId] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -88,6 +97,7 @@ const Chat = ({
   }, []);
 
   const sendMessage = async (text) => {
+    setLoading(true);
     const response = await fetch(
       `/api/assistants/threads/${threadId}/messages`,
       {
@@ -102,6 +112,7 @@ const Chat = ({
   };
 
   const submitActionResult = async (runId, toolCallOutputs) => {
+    setLoading(true);
     const response = await fetch(
       `/api/assistants/threads/${threadId}/actions`,
       {
@@ -162,6 +173,7 @@ const Chat = ({
 
   const handleRunCompleted = () => {
     setInputDisabled(false);
+    setLoading(false);
   };
 
   const handleReadableStream = (stream: AssistantStream) => {
@@ -183,6 +195,8 @@ const Chat = ({
   const handleSubmit = async (e?: FormEvent<HTMLFormElement>) => {
     e?.preventDefault();
     if (!userInput.trim()) return;
+    setLoading(true);
+    setUserInput("");
 
     setMessages((prevMessages) => [
       ...prevMessages,
@@ -197,8 +211,8 @@ const Chat = ({
           ...currentMessages,
           { role: "assistant", text: response }
         ]);
-        setUserInput("");
         setInputDisabled(false);
+        setLoading(false);
         scrollToBottom(messagesEndRef);
         return;
       }
@@ -213,10 +227,10 @@ const Chat = ({
     )) {
       setMessages(currentMessages => [
         ...currentMessages,
-        { role: "assistant", text: "$$$$" } // Show the help menu
+        { role: "assistant", text: "$$$$" }
       ]);
-      setUserInput("");
       setInputDisabled(false);
+      setLoading(false);
       scrollToBottom(messagesEndRef);
       return;
     }
@@ -228,16 +242,14 @@ const Chat = ({
           ...currentMessages,
           { role: "assistant", text: response }
         ]);
-        setUserInput("");
         setInputDisabled(false);
+        setLoading(false);
         scrollToBottom(messagesEndRef);
         return;
       }
     }
 
     sendMessage(userInput);
-    setUserInput("");
-    setInputDisabled(true);
     scrollToBottom(messagesEndRef);
   };
 
@@ -252,6 +264,13 @@ const Chat = ({
       {input}
     </button>
   }, [setUserInput, handleSubmit]);
+
+  function shouldShowTypingIndicator(loading: boolean, messages: any[]): boolean {
+    if (!loading) return false;
+    if (!messages.length) return true;
+    const last = messages[messages.length - 1];
+    return last.role !== "assistant" || last.text === "";
+  }
 
   return (
     <div className={styles.chatContainer}>
@@ -273,6 +292,7 @@ const Chat = ({
             </div>
           } />
         ))}
+        {shouldShowTypingIndicator(loading, messages) && <TypingIndicator />}
         <div ref={messagesEndRef} />
       </div>
 
