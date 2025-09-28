@@ -1,0 +1,63 @@
+.modelDropdownContainer {
+    margin-bottom: 12px;
+    margin-left: 10px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.modelLabel {
+    font-size: 0.9em;
+    font-weight: 500;
+    color: var(--foreground-color);
+    margin-left: 16px;
+}
+
+.modelSelect {
+    padding: 12px 40px 12px 16px;
+    border-radius: 60px;
+    cursor: pointer;
+    min-width: 200px;
+    font-size: 1em;
+    border: 2px solid var(--foreground-color);
+    background-color: var(--background-color);
+    color: var(--foreground-color);
+    transition: all 0.2s ease-in-out;
+
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+
+    background-image: url('data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23000000"><path d="M7 10l5 5 5-5z"/></svg>');
+    background-repeat: no-repeat;
+    background-position: right 16px center;
+    background-size: 16px 16px;
+}
+
+.modelSelect:hover {
+    border-color: var(--secondary-color);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.modelSelect:focus {
+    outline: none;
+    border-color: var(--secondary-color);
+    box-shadow: 0 0 0 3px rgba(168, 194, 193, 0.2);
+}
+
+/* Dark theme support for dropdown arrow */
+body.dark-theme .modelSelect {
+    background-image: url('data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23ffffff"><path d="M7 10l5 5 5-5z"/></svg>');
+}
+
+/* Style the dropdown options */
+.modelSelect option {
+    background-color: var(--background-color);
+    color: var(--foreground-color);
+    padding: 8px 16px;
+}
+
+.modelSelect option:hover {
+    background-color: var(--primary-color);
+}
