@@ -10,7 +10,7 @@
   display: flex;
   width: 100%;
   padding: 10px;
-  padding-bottom: 40px;
+  padding-bottom: 10px;
 }
 
 .input {
@@ -23,13 +23,6 @@
   background-color: var(--background-color);
   color: var(--foreground-color);
 }
-
-/* .input:focus {
-  outline: none !important;
-  border-color: #000;
-  background-color: var(--primary-color);
-  color: var(--foreground-color);
-} */
 
 .button {
   padding: 8px 24px;
@@ -54,8 +47,20 @@
   white-space: pre-wrap;
 }
 
+.assistantMessageContainer {
+  display: flex;
+  margin: 8px 0;
+  align-self: flex-start;
+  max-width: 80%;
+}
+
+.assistantMessage {
+  padding: 8px 16px;
+  overflow-wrap: break-word;
+  border-radius: 20px;
+}
+
 .userMessage,
-.assistantMessage,
 .codeMessage {
   margin: 8px 0;
   padding: 8px 16px;
@@ -154,4 +159,45 @@
   40% {
     opacity: 1;
   }
+}
+
+.modelsList {
+  margin-top: 20px;
+  padding: 10px;
+  border: 1px solid var(--foreground-color);
+  border-radius: 8px;
+  background-color: var(--background-color);
+}
+
+.modelsList ul {
+  list-style: none;
+  padding: 0;
+}
+
+.modelsList li {
+  padding: 8px;
+  border: 1px solid var(--foreground-color);
+  border-radius: 4px;
+  margin-bottom: 5px;
+  background-color: var(--secondary-color);
+  color: var(--foreground-color);
+}
+
+.modelsList li:hover {
+  background-color: var(--primary-color);
+  cursor: pointer;
+}
+
+.selectedModel {
+  background-color: var(--primary-color);
+  font-weight: bold;
+}
+
+.playPauseButton {
+  width: 24px;
+  height: 24px;
+  margin-left: 6px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  align-self: flex-end;
 }

@@ -22,5 +22,17 @@ export function appendToLastMessage(setMessages: Function, text: string) {
 }
 
 export function appendMessage(setMessages: Function, role: string, text: string) {
-  setMessages((prevMessages: any[]) => [...prevMessages, { role, text }]);
+  setMessages((prevMessages: any[]) => [...prevMessages, { role, text, isStreamFinished: false }]);
+}
+
+export function markLastMessageAsFinished(setMessages: Function) {
+  setMessages((prevMessages: any[]) => {
+    if (prevMessages.length === 0) return prevMessages;
+    const lastMessage = prevMessages[prevMessages.length - 1];
+    const updatedLastMessage = {
+      ...lastMessage,
+      isStreamFinished: true,
+    };
+    return [...prevMessages.slice(0, -1), updatedLastMessage];
+  });
 } 
