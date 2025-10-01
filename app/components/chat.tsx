@@ -56,7 +56,7 @@ const AssistantMessage = ({ text, selectedModel, isStreamFinished, isDarkTheme }
         audioIdRef.current = data.audioId;
       }
 
-      const streamUrl = `${TTSServiceURL}/stream/${audioIdRef.current}`;
+      const streamUrl = `/api/speech/tts/play/${audioIdRef.current}`;
 
       if (!audioPlayerRef.current) {
         audioPlayerRef.current = new Audio();

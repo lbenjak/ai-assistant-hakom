@@ -1,6 +1,6 @@
 export const runtime = "nodejs";
 
-import { localTTSURL } from "@/app/speech-config";
+import { TTSServiceURL } from "@/app/speech-config";
 
 export async function GET(
   request: Request,
@@ -9,7 +9,7 @@ export async function GET(
   const audioId = params.audioId;
 
   try {
-    const streamURL = `${localTTSURL}/stream/${audioId}`;
+    const streamURL = `${TTSServiceURL}/stream/${audioId}`;
 
     const ttsResponse = await fetch(streamURL, {
       method: 'GET',
