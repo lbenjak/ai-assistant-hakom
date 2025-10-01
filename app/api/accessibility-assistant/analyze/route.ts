@@ -131,12 +131,14 @@ export async function POST(request: Request) {
             });
             
             if (LOGGING_ENABLED) { console.log('Successfully submitted tool outputs'); }
+            break;
           } catch (error) {
             if (LOGGING_ENABLED) { console.error('Error processing function arguments:', {
               error: error.message,
               args: toolCall.function.arguments
             }); }
             analysisResult = { intentType: "NOT_ACCESSIBILITY", confidence: 1.0 };
+            break;
           }
         }
       }
