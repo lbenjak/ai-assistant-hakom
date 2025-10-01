@@ -14,35 +14,47 @@ interface DifferentModelsResponse {
 export async function POST(request) {
     let requestBody: DifferentModelsRequest;
 
-    requestBody = await request.json();
+    try {
+        requestBody = await request.json();
+    } catch (error) {
+        console.error("Failed to parse request body", error);
+        return Response.json({ error: "Invalid request body" }, { status: 400 });
+    }
 
     const { text, model } = requestBody;
     
-    const ttsResponse = await fetch(`${TTSServiceURL}/synthesize/${model}`, {
+    const requestPayload = {
+        text: text,
+        speed_rate: "1.1",
+    };
+    
+    const ttsResponse = await fetch(`${TTSServiceURL}/synthesize`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json'
         },
         credentials: "include",
-        body: JSON.stringify({
-            text: text,
-            speed_rate: "1.1",
-        }),
+        body: JSON.stringify(requestPayload),
     });
 
     if (!ttsResponse.ok) {
-        const errorBody = await ttsResponse.json();
+        let errorBody;
+        try {
+            errorBody = await ttsResponse.json();
+        } catch (e) {
+            errorBody = await ttsResponse.text();
+        }
         console.error(`TTS service error: ${ttsResponse.status} ${ttsResponse.statusText}`, errorBody);
         return Response.json(
             { error: `TTS service failed with status ${ttsResponse.status}.`, details: errorBody },
             { status: ttsResponse.status }
         );
     }
-    const data = await ttsResponse.json();
-    console.log("TTS service response:", data);
 
-    const modelsResponse: DifferentModelsResponse = { audioId: data.audio_id };
+    const audioId = await ttsResponse.text();
+
+    const modelsResponse: DifferentModelsResponse = { audioId: audioId };
 
     return Response.json(modelsResponse);
 }

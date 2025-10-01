@@ -51,6 +51,7 @@ const AssistantMessage = ({ text, selectedModel, isStreamFinished, isDarkTheme }
           console.error("Failed to get audioId from /api/speech/tts/different_models");
           return;
         }
+        
         const data: { audioId: string } = await response.json();
         audioIdRef.current = data.audioId;
       }
