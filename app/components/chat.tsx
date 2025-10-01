@@ -55,7 +55,7 @@ const AssistantMessage = ({ text, selectedModel, isStreamFinished, isDarkTheme }
         audioIdRef.current = data.audioId;
       }
 
-      const streamUrl = `${selectedModel === "VITS-hr" ? TTSServiceURL : localTTSURL}/stream/${audioIdRef.current}`;
+      const streamUrl = `${TTSServiceURL}/stream/${audioIdRef.current}`;
 
       if (!audioPlayerRef.current) {
         audioPlayerRef.current = new Audio();
