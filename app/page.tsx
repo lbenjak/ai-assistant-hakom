@@ -8,7 +8,7 @@ const Home = () => {
   return (
     <main className={styles.main}>
       <img 
-        src="/HAKOM_logo_2.png" 
+        src="/hakom_logo_5.png" 
         alt="HAKOM Logo" 
         className="logo"
       />

@@ -7,7 +7,7 @@ export const metadata = {
   title: "HAKOM AI Virtualni asistent",
   description: "HAKOM AI Virtualni asistent - Vaš digitalni asistent",
   icons: {
-    icon: "/HAKOM_logo_2.png",
+    icon: "/hakom_logo_5.png",
   },
 };
 
