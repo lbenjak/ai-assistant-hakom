@@ -7,7 +7,6 @@ export async function POST(request, { params: { threadId } }) {
   const stream = openai.beta.threads.runs.submitToolOutputsStream(
     threadId,
     runId,
-    // { tool_outputs: [{ output: result, tool_call_id: toolCallId }] },
     { tool_outputs: toolCallOutputs }
   );
 

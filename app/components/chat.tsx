@@ -264,7 +264,8 @@ const Chat = ({
 
   const handleTextDelta = (delta) => {
     if (delta.value != null) {
-      appendToLastMessage(setMessages, delta.value);
+      const cleanedValue = delta.value.replace(/【[^】]*】/g, '');
+      appendToLastMessage(setMessages, cleanedValue);
     };
   };
 
