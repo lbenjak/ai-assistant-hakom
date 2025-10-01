@@ -7,22 +7,96 @@ import styles from "./chat.module.css";
 // @ts-expect-error - no types for this yet
 import { AssistantStreamEvent } from "openai/resources/beta/assistants/assistants";
 import { RequiredActionFunctionToolCall } from "openai/resources/beta/threads/runs/runs";
-import { dyslexicFont, inter } from "../fonts";
+import RecordAudio from "./speech_recognition/record-audio";
+import ModelSelectorDropdown from "./speech_synthesis/model-selector-dropdown";
+import { localTTSURL, TTSServiceURL } from "../speech-config";
+import { handleAccessibilityAction } from "./accessibility";
+import { handleQuickQuestion, analyzeAccessibilityIntent } from "./intentRecognition";
+import { scrollToBottom, appendToLastMessage, appendMessage, markLastMessageAsFinished } from "./chatUtils";
 
 type MessageProps = {
   role: "user" | "assistant" | "code";
   text: string;
   helpMessage: ReactNode;
+  selectedModel: string | null;
+  isStreamFinished: boolean;
+  isDarkTheme: boolean;
 };
 
 const UserMessage = ({ text }: { text: string }) => {
   return <div className={styles.userMessage}>{text}</div>;
 };
 
-const AssistantMessage = ({ text }: { text: string }) => {
+const AssistantMessage = ({ text, selectedModel, isStreamFinished, isDarkTheme }: { text: string, selectedModel: string | null, isStreamFinished: boolean, isDarkTheme: boolean }) => {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const audioIdRef = useRef<string | null>(null);
+
+  const handlePlayPause = async () => {
+    if (audioPlayerRef.current && isPlaying) {
+      audioPlayerRef.current.pause();
+      setIsPlaying(false);
+      return;
+    }
+
+    try {
+      if (!audioIdRef.current) {
+        const response = await fetch('/api/speech/tts/different_models', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, model: selectedModel }),
+        });
+
+        if (!response.ok) {
+          console.error("Failed to get audioId from /api/speech/tts/different_models");
+          return;
+        }
+        
+        const data: { audioId: string } = await response.json();
+        audioIdRef.current = data.audioId;
+      }
+
+      const streamUrl = `${TTSServiceURL}/stream/${audioIdRef.current}`;
+
+      if (!audioPlayerRef.current) {
+        audioPlayerRef.current = new Audio();
+        audioPlayerRef.current.addEventListener('ended', () => {
+          setIsPlaying(false);
+          audioIdRef.current = null;
+          audioPlayerRef.current = null;
+        });
+        audioPlayerRef.current.addEventListener('error', (e) => {
+          setIsPlaying(false);
+          audioIdRef.current = null;
+        });
+      }
+
+      audioPlayerRef.current.src = streamUrl;
+      audioPlayerRef.current.play().catch(e => {
+        setIsPlaying(false);
+        audioIdRef.current = null;
+      });
+      setIsPlaying(true);
+    } catch (error) {
+      setIsPlaying(false);
+    }
+  };
+
   return (
-    <div className={styles.assistantMessage}>
-      <Markdown>{text}</Markdown>
+    <div className={styles.assistantMessageContainer}>
+      <div className={styles.assistantMessage}>
+        <Markdown>{text}</Markdown>
+      </div>
+      {isStreamFinished && <img
+        className={styles.playPauseButton}
+        alt="Pokreni audio"
+        onClick={handlePlayPause}
+        src={
+          isPlaying
+            ? `/pause-button-round-icon${isDarkTheme ? '-dark' : ''}.svg`
+            : `/play-button-round-icon${isDarkTheme ? '-dark' : ''}.svg`
+        }
+      />}
     </div>
   );
 };
@@ -40,7 +114,7 @@ const CodeMessage = ({ text }: { text: string }) => {
   );
 };
 
-const Message = ({ role, text, helpMessage }: MessageProps) => {
+const Message = ({ role, text, helpMessage, selectedModel, isStreamFinished, isDarkTheme }: MessageProps) => {
   if (text === "$$$$") {
     return helpMessage;
   }
@@ -49,7 +123,7 @@ const Message = ({ role, text, helpMessage }: MessageProps) => {
     case "user":
       return <UserMessage text={text} />;
     case "assistant":
-      return <AssistantMessage text={text} />;
+      return <AssistantMessage text={text} selectedModel={selectedModel} isStreamFinished={isStreamFinished} isDarkTheme={isDarkTheme} />;
     case "code":
       return <CodeMessage text={text} />;
     default:
@@ -63,33 +137,82 @@ type ChatProps = {
   ) => Promise<string>;
 };
 
+const TypingIndicator = () => (
+  <div className={styles.typingIndicator}>
+    <span className={styles.typingDot}></span>
+    <span className={styles.typingDot}></span>
+    <span className={styles.typingDot}></span>
+  </div>
+);
+
+const ENABLE_LOGGING = typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_ENABLE_LOGGING === 'true';
+
 const Chat = ({
-  functionCallHandler = () => Promise.resolve(""), // default to return empty string
+  functionCallHandler = () => Promise.resolve(""),
 }: ChatProps) => {
   const [userInput, setUserInput] = useState("");
   const [messages, setMessages] = useState([]);
   const [inputDisabled, setInputDisabled] = useState(false);
   const [threadId, setThreadId] = useState("");
-  const [timeoutId, setTimeoutId] = useState(null);
-  const [accessibilityMessageSent, setAccessibilityMessageSent] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [models, setModels] = useState<string[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string | null>(null);
+  const [isDarkTheme, setIsDarkTheme] = useState(false);
 
-  // Function to calculate timeout duration based on word count
-  const calculateTimeout = (message) => {
-    const words = message.split(" ").length;
-    const delayPerWord = 800; // 1 second per word, adjust as needed
-    return words * delayPerWord;
+  const handleRecognizedSpeech = (recognizedText: string) => {
+    setUserInput(recognizedText);
   };
 
-  // automatically scroll to bottom of chat
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    if (typeof window !== 'undefined') {
+      setIsDarkTheme(document.body.classList.contains('dark-theme'));
 
-  // create a new threadID when chat component created
+      const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+          if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+            setIsDarkTheme(document.body.classList.contains('dark-theme'));
+          }
+        });
+      });
+
+      observer.observe(document.body, {
+        attributes: true,
+        attributeFilter: ['class']
+      });
+
+      return () => observer.disconnect();
+    }
+  }, []);
+
+  useEffect(() => {
+    const fetchModels = async () => {
+      try {
+        const response = await fetch("/api/speech/tts/get_models",
+          {
+            method: "GET",
+          }
+        );
+        if (!response.ok) {
+          throw new Error("Failed to fetch models");
+        }
+        const data = await response.json();
+        setModels(data.models);
+        setSelectedModel(data.models[0]);
+      } catch (error) {
+        console.error("Error fetching models:", error);
+      }
+    };
+
+    fetchModels();
+  }, []);
+
+  const handleModelSelect = (model: string) => {
+    setSelectedModel(model);
+  };
+
+
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
   useEffect(() => {
     const createThread = async () => {
       const res = await fetch(`/api/assistants/threads`, {
@@ -101,29 +224,8 @@ const Chat = ({
     createThread();
   }, []);
 
-  // handle user inactivity
-  useEffect(() => {
-    if (timeoutId) clearTimeout(timeoutId);
-
-    const lastAssistantMessage = messages.filter(msg => msg.role === "assistant").pop();
-    const timeoutDuration = lastAssistantMessage ? calculateTimeout(lastAssistantMessage.text) : 10000;
-
-    const id = setTimeout(() => {
-      if (!accessibilityMessageSent) {
-        setMessages((prevMessages) => [
-          ...prevMessages,
-          { role: "assistant", text: "Mogu li ti kako pomoći sa postavkama pristupačnosti?" }
-        ]);
-        setAccessibilityMessageSent(true);
-        scrollToBottom();
-      }
-    }, timeoutDuration);
-
-    setTimeoutId(id);
-    return () => clearTimeout(id);
-  }, [userInput, messages]);
-
   const sendMessage = async (text) => {
+    setLoading(true);
     const response = await fetch(
       `/api/assistants/threads/${threadId}/messages`,
       {
@@ -138,6 +240,7 @@ const Chat = ({
   };
 
   const submitActionResult = async (runId, toolCallOutputs) => {
+    setLoading(true);
     const response = await fetch(
       `/api/assistants/threads/${threadId}/actions`,
       {
@@ -155,174 +258,31 @@ const Chat = ({
     handleReadableStream(stream);
   };
 
-
-  const handleSubmit = (e?: FormEvent<HTMLFormElement>) => {
-    e?.preventDefault();
-    if (!userInput.trim()) return;
-
-    const lowerCasedInput = userInput.toLowerCase();
-
-    setMessages((prevMessages) => [
-      ...prevMessages,
-      { role: "user", text: userInput },
-    ]);
-
-    if (lowerCasedInput.includes('koje opcije pristupačnosti nudiš')) {
-      setMessages(currentMessages => [
-        ...currentMessages,
-        {
-          role: "assistant", text: `$$$$`
-        }
-      ]);
-
-      setUserInput("");
-      setInputDisabled(false);
-      scrollToBottom();
-      return;
-    }
-
-    if (lowerCasedInput.includes('povećaj font')) {
-      setMessages(currentMessages => [
-        ...currentMessages,
-        { role: "assistant", text: "Veličina fonta je povećana." }
-      ]);
-
-      document.documentElement.style.fontSize = '1.2rem';
-
-      setUserInput("");
-      setInputDisabled(false);
-      scrollToBottom();
-      return;
-    }
-
-    if (lowerCasedInput.includes('smanji font')) {
-      setMessages(currentMessages => [
-        ...currentMessages,
-        { role: "assistant", text: "Veličina fonta je smanjena." }
-      ]);
-
-      document.documentElement.style.fontSize = '0.8rem';
-
-      setUserInput("");
-      setInputDisabled(false);
-      scrollToBottom();
-      return;
-    }
-
-    if (lowerCasedInput.includes('resetiraj veličinu fonta')) {
-      setMessages(currentMessages => [
-        ...currentMessages,
-        { role: "assistant", text: "Veličina fonta vraćena je na početnu vrijednost." }
-      ]);
-
-      document.documentElement.style.fontSize = '1rem';
-
-      setUserInput("");
-      setInputDisabled(false);
-      scrollToBottom();
-      return;
-    }
-
-    if (lowerCasedInput.includes('resetiraj tip fonta')) {
-      setMessages(currentMessages => [
-        ...currentMessages,
-        { role: "assistant", text: "Tip fonta vraćen je na početnu vrijednost." }
-      ]);
-
-      document.body.classList.remove(dyslexicFont.className);
-      document.body.classList.add(inter.className);
-
-      setUserInput("");
-      setInputDisabled(false);
-      scrollToBottom();
-      return;
-    }
-
-    if (lowerCasedInput.includes('disleks')) {
-      setMessages(currentMessages => [
-        ...currentMessages,
-        { role: "assistant", text: "Tip fonta je promijenjen kako bi bio prilagođen osobama sa disleksijom." }
-      ]);
-
-      document.body.classList.remove(inter.className);
-      document.body.classList.add(dyslexicFont.className);
-
-      setUserInput("");
-      setInputDisabled(false);
-      scrollToBottom();
-      return;
-    }
-
-    if (lowerCasedInput.includes('tamna tema')) {
-      setMessages(currentMessages => [
-        ...currentMessages,
-        { role: "assistant", text: "Tema je promijenjena na tamni način." }
-      ]);
-
-      document.body.classList.add('dark-theme');
-
-      setUserInput("");
-      setInputDisabled(false);
-      scrollToBottom();
-      return;
-    }
-
-    if (lowerCasedInput.includes('svijetla tema')) {
-      setMessages(currentMessages => [
-        ...currentMessages,
-        { role: "assistant", text: "Tema je promijenjena na svijetli način." }
-      ]);
-
-      document.body.classList.remove('dark-theme');
-
-      setUserInput("");
-      setInputDisabled(false);
-      scrollToBottom();
-      return;
-    }
-
-    sendMessage(userInput);
-    setUserInput("");
-    setInputDisabled(true);
-    scrollToBottom();
-  };
-
-  /* Stream Event Handlers */
-
-  // textCreated - create new assistant message
   const handleTextCreated = () => {
-    appendMessage("assistant", "");
+    appendMessage(setMessages, "assistant", "");
   };
 
-  // textDelta - append text to last assistant message
   const handleTextDelta = (delta) => {
     if (delta.value != null) {
-      appendToLastMessage(delta.value);
+      appendToLastMessage(setMessages, delta.value);
     };
-    if (delta.annotations != null) {
-      annotateLastMessage(delta.annotations);
-    }
   };
 
-  // imageFileDone - show image in chat
   const handleImageFileDone = (image) => {
-    appendToLastMessage(`\n![${image.file_id}](/api/files/${image.file_id})\n`);
+    appendToLastMessage(setMessages, `\n![${image.file_id}](/api/files/${image.file_id})\n`);
   }
 
-  // toolCallCreated - log new tool call
   const toolCallCreated = (toolCall) => {
     if (toolCall.type != "code_interpreter") return;
-    appendMessage("code", "");
+    appendMessage(setMessages, "code", "");
   };
 
-  // toolCallDelta - log delta and snapshot for the tool call
   const toolCallDelta = (delta, snapshot) => {
     if (delta.type != "code_interpreter") return;
     if (!delta.code_interpreter.input) return;
-    appendToLastMessage(delta.code_interpreter.input);
+    appendToLastMessage(setMessages, delta.code_interpreter.input);
   };
 
-  // handleRequiresAction - handle function call
   const handleRequiresAction = async (
     event: AssistantStreamEvent.ThreadRunRequiresAction
   ) => {
@@ -339,24 +299,21 @@ const Chat = ({
     submitActionResult(runId, toolCallOutputs);
   };
 
-  // handleRunCompleted - re-enable the input form
   const handleRunCompleted = () => {
     setInputDisabled(false);
+    setLoading(false);
+    markLastMessageAsFinished(setMessages);
   };
 
   const handleReadableStream = (stream: AssistantStream) => {
-    // messages
     stream.on("textCreated", handleTextCreated);
     stream.on("textDelta", handleTextDelta);
 
-    // image
     stream.on("imageFileDone", handleImageFileDone);
 
-    // code interpreter
     stream.on("toolCallCreated", toolCallCreated);
     stream.on("toolCallDelta", toolCallDelta);
 
-    // events without helpers yet (e.g. requires_action and run.done)
     stream.on("event", (event) => {
       if (event.event === "thread.run.requires_action")
         handleRequiresAction(event);
@@ -364,71 +321,115 @@ const Chat = ({
     });
   };
 
-  /*
-    =======================
-    === Utility Helpers ===
-    =======================
-  */
+  const handleSubmit = async (e?: FormEvent<HTMLFormElement>) => {
+    e?.preventDefault();
+    if (!userInput.trim()) return;
+    setLoading(true);
+    setUserInput("");
 
-  const appendToLastMessage = (text) => {
-    setMessages((prevMessages) => {
-      const lastMessage = prevMessages[prevMessages.length - 1];
-      const updatedLastMessage = {
-        ...lastMessage,
-        text: lastMessage.text + text,
-      };
-      return [...prevMessages.slice(0, -1), updatedLastMessage];
-    });
+    setMessages((prevMessages) => [
+      ...prevMessages,
+      { role: "user", text: userInput, isStreamFinished: true },
+    ]);
+
+    const quickQuestionIntent = handleQuickQuestion(userInput);
+    if (quickQuestionIntent) {
+      const response = handleAccessibilityAction(quickQuestionIntent);
+      if (response) {
+        setMessages(currentMessages => [
+          ...currentMessages,
+          { role: "assistant", text: response, isStreamFinished: true }
+        ]);
+        setInputDisabled(false);
+        setLoading(false);
+        scrollToBottom(messagesEndRef);
+        return;
+      }
+    }
+
+    const intent = await analyzeAccessibilityIntent(userInput);
+
+    if (intent && (
+      intent.intentType === "GENERAL_QUERY" ||
+      (intent.confidence > 0.3 && intent.confidence < 0.7) ||
+      (intent.intentType !== "NOT_ACCESSIBILITY" && intent.confidence < 0.7)
+    )) {
+      setMessages(currentMessages => [
+        ...currentMessages,
+        { role: "assistant", text: `$$$$`, isStreamFinished: true }
+      ]);
+      setInputDisabled(false);
+      setLoading(false);
+      scrollToBottom(messagesEndRef);
+      return;
+    }
+
+    if (intent && intent.confidence >= 0.7) {
+      const response = handleAccessibilityAction(intent);
+      if (response) {
+        setMessages(currentMessages => [
+          ...currentMessages,
+          { role: "assistant", text: response }
+        ]);
+        setInputDisabled(false);
+        setLoading(false);
+        scrollToBottom(messagesEndRef);
+        return;
+      }
+    }
+
+    sendMessage(userInput);
+    scrollToBottom(messagesEndRef);
   };
-
-  const appendMessage = (role, text) => {
-    setMessages((prevMessages) => [...prevMessages, { role, text }]);
-  };
-
-  const annotateLastMessage = (annotations) => {
-    setMessages((prevMessages) => {
-      const lastMessage = prevMessages[prevMessages.length - 1];
-      const updatedLastMessage = {
-        ...lastMessage,
-      };
-      annotations.forEach((annotation) => {
-        if (annotation.type === 'file_path') {
-          updatedLastMessage.text = updatedLastMessage.text.replaceAll(
-            annotation.text,
-            `/api/files/${annotation.file_path.file_id}`
-          );
-        }
-      })
-      return [...prevMessages.slice(0, -1), updatedLastMessage];
-    });
-  }
 
   const QuickQuestion = useCallback(({ input }: { input: string }) => {
-    return <button className={styles.quickQuestionButton} onClick={() => {
-      setUserInput(input.toLowerCase());
-    }}>{input}</button>
-  }, [setUserInput, handleSubmit])
+    return <button 
+      className={styles.quickQuestionButton} 
+      onClick={() => {
+        setUserInput(input);
+        handleSubmit();
+      }}
+    >
+      {input}
+    </button>
+  }, [setUserInput, handleSubmit]);
+
+  function shouldShowTypingIndicator(loading: boolean, messages: any[]): boolean {
+    if (!loading) return false;
+    if (!messages.length) return true;
+    const last = messages[messages.length - 1];
+    return last.role !== "assistant" || last.text === "";
+  }
 
   return (
     <div className={styles.chatContainer}>
       <div className={styles.messages}>
         {messages.map((msg, index) => (
-          <Message key={index} role={msg.role} text={msg.text} helpMessage={
-            <div className={styles.assistantMessage}>
-              <p >Ako želiš promijeniti opcije pristupačnosti, samo napiši koje postavke želiš prilagoditi. Možeš ih prilagoditi i na sljedeće načine: </p>
-              <br />
-              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                <QuickQuestion input="Tamna tema" />
-                <QuickQuestion input="Svijetla tema" />
-                <QuickQuestion input="Font prilagođen disleksiji" />
-                <QuickQuestion input="Resetiraj tip fonta" />
-                <QuickQuestion input="Povećaj font" />
-                <QuickQuestion input="Smanji font" />
-                <QuickQuestion input="Resetiraj veličinu fonta" />
+          <Message 
+            key={index} 
+            role={msg.role} 
+            text={msg.text} 
+            selectedModel={selectedModel}
+            isStreamFinished={msg.isStreamFinished}
+            isDarkTheme={isDarkTheme}
+            helpMessage={
+              <div className={styles.assistantMessage}>
+                <p >Ako želiš promijeniti opcije pristupačnosti, samo napiši koje postavke želiš prilagoditi. Možeš ih prilagoditi i na sljedeće načine: </p>
+                <br />
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  <QuickQuestion input="Tamna tema" />
+                  <QuickQuestion input="Svijetla tema" />
+                  <QuickQuestion input="Font prilagođen disleksiji" />
+                  <QuickQuestion input="Resetiraj tip fonta" />
+                  <QuickQuestion input="Povećaj font" />
+                  <QuickQuestion input="Smanji font" />
+                  <QuickQuestion input="Resetiraj veličinu fonta" />
+                </div>
               </div>
-            </div>
-          } />
+            } 
+          />
         ))}
+        {shouldShowTypingIndicator(loading, messages) && <TypingIndicator />}
         <div ref={messagesEndRef} />
       </div>
 
@@ -459,6 +460,12 @@ const Chat = ({
         >
           Pošalji
         </button>
+        <RecordAudio onRecognize={handleRecognizedSpeech} />
+        <ModelSelectorDropdown
+          models={models}
+          selectedModel={selectedModel}
+          handleModelSelect={handleModelSelect}
+      />
       </form>
     </div>
   );

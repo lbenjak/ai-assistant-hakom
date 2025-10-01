@@ -1,0 +1,25 @@
+.recordIcon {
+    width: 48px;
+    height: 48px;
+    padding: 10px;
+    margin-left: 8px;
+    cursor: pointer;
+    align-self: center;
+    background-color: var(--secondary-color);
+    border-radius: 50%;
+  }
+  
+  .recordIcon.recording {
+    background-color: var(--accent-color);
+  }
+  
+  .loaderContainer {
+    width: 48px;
+    height: 48px;
+    padding: 10px;
+    margin-left: 8px;
+    align-self: center;
+    background-color: var(--secondary-color);
+    border-radius: 50%;
+  }
+  

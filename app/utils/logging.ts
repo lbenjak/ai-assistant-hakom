@@ -1,0 +1,1 @@
+export const LOGGING_ENABLED = typeof process !== 'undefined' && process.env && (process.env.NEXT_PUBLIC_ENABLE_LOGGING === 'true' || process.env.LOGGING_ENABLED === 'true'); 
