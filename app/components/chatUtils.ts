@@ -21,6 +21,7 @@ export function appendToLastMessage(setMessages: Function, text: string) {
   });
 }
 
+
 export function appendMessage(setMessages: Function, role: string, text: string) {
   setMessages((prevMessages: any[]) => [...prevMessages, { role, text, isStreamFinished: false }]);
 }
