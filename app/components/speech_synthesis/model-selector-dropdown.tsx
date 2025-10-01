@@ -3,7 +3,7 @@ import styles from './model-selector-dropdown.module.css';
 
 interface ModelSelectorDropdownProps {
     models: string[];
-    selectedModel: string;
+    selectedModel: string | null;
     handleModelSelect: (model: string) => void;
 }
 
@@ -21,7 +21,7 @@ const ModelSelectorDropdown = ({ models, selectedModel, handleModelSelect }: Mod
             </label>
             <select
                 id="model-select"
-                value={selectedModel}
+                value={selectedModel || ""}
                 onChange={handleChange}
                 className={styles.modelSelect}
             >

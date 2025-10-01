@@ -165,6 +165,21 @@ const Chat = ({
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setIsDarkTheme(document.body.classList.contains('dark-theme'));
+
+      const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+          if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+            setIsDarkTheme(document.body.classList.contains('dark-theme'));
+          }
+        });
+      });
+
+      observer.observe(document.body, {
+        attributes: true,
+        attributeFilter: ['class']
+      });
+
+      return () => observer.disconnect();
     }
   }, []);
 

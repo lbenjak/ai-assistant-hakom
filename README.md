@@ -20,9 +20,8 @@ Create a `.env` file in the root of the project and add your OpenAI API key:
 
 ```
 OPENAI_API_KEY="sk_..."
-NEXT_PUBLIC_CHAT_ASSISTANT_ID="asst_"
-NEXT_PUBLIC_INTENT_ASSISTANT_ID="asst_"
-NEXT_PUBLIC_INTENT_ASSISTANT_ID=asst_3w5Og5MaaRuKaqw1mU37wtXF
+OPENAI_ASSISTANT_ID="asst_"
+ACCESSIBILITY_ASSISTANT_ID="asst_"
 NEXT_PUBLIC_ENABLE_LOGGING=true
 ```
 
