@@ -4,10 +4,10 @@ import { assistantId } from "./assistant-config";
 import { inter } from "./fonts";
 
 export const metadata = {
-  title: "Assistants API Quickstart",
-  description: "A quickstart template using the Assistants API with OpenAI",
+  title: "HAKOM AI Virtualni asistent",
+  description: "HAKOM AI Virtualni asistent - Vaš digitalni asistent",
   icons: {
-    icon: "/openai.svg",
+    icon: "/HAKOM_logo_2.png",
   },
 };
 
