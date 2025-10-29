@@ -29,6 +29,12 @@
   justify-content: center;
 }
 
+@media (min-width: 1101px) {
+  .container {
+    padding-right: 140px;
+  }
+}
+
 .category {
   color: black;
   display: flex;
